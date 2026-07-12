@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.MedicineTimer" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">@color/app_background</item>
+        <item name="android:navigationBarColor">@android:color/white</item>
+        <item name="android:windowBackground">@drawable/splash_background</item>
+    </style>
+</resources>
