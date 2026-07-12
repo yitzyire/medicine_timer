@@ -1,0 +1,102 @@
+# Gradle
+.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+reports/
+internal-docs/
+.agents/
+.codex/
+
+# Android Studio / IntelliJ
+.idea/
+.idea_modules/
+*.iml
+*.iws
+*.ipr
+.name
+out/
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
+deploymentTargetDropDown.xml
+deploymentTargetSelector.xml
+render.experimental.xml
+
+# Android Studio generated caches
+.kotlin/
+
+# Android local config
+local.properties
+local.defaults.properties
+
+# Signing and secrets
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+*.cer
+*.crt
+keystore.properties
+signing.properties
+secrets.properties
+.env
+.env.*
+*.env
+google-services.json
+firebase-appdistribution*.json
+service-account*.json
+*service-account*.json
+play-account*.json
+credentials.json
+*credentials*.json
+
+# Generated Android artifacts
+*.apk
+*.aab
+*.ap_
+*.dex
+*.idsig
+*.hprof
+*.prof
+*.profm
+release/
+app/release/
+**/outputs/
+**/generated/
+**/intermediates/
+**/tmp/
+**/lint-results*.html
+**/lint-results*.xml
+**/lint-results*.txt
+**/mapping/
+**/native-debug-symbols/
+
+# Kotlin / Java
+*.class
+
+# Logs
+*.log
+hs_err_pid*
+replay_pid*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.orig
+
+# Local/private data exports
+*.db
+*.sqlite
+*.sqlite3
+*.csv
