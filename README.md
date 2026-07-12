@@ -6,16 +6,10 @@ The app is built with Kotlin, Jetpack Compose, Android Gradle Plugin, and the ch
 
 ## Screenshots
 
-Add screenshots to `images/` with these filenames:
-
-- `images/medicines.png`
-- `images/completed.png`
-- `images/calendar.png`
-
 <p>
-  <img src="images/medicines.png" alt="Medicine Timer medicines screen" width="260">
-  <img src="images/completed.png" alt="Medicine Timer completed screen" width="260">
-  <img src="images/calendar.png" alt="Medicine Timer calendar screen" width="260">
+  <img src="images/medicine_timer_1.jpg" alt="Medicine Timer medicines screen" width="260">
+  <img src="images/medicine_timer_2.jpg" alt="Medicine Timer completed screen" width="260">
+  <img src="images/medicine_timer_3.jpg" alt="Medicine Timer calendar screen" width="260">
 </p>
 
 ## Features
