@@ -6,11 +6,23 @@ The app is built with Kotlin, Jetpack Compose, Android Gradle Plugin, and the ch
 
 ## Screenshots
 
-<p>
-  <img src="images/medicine_timer_1.jpg" alt="Medicine Timer medicines screen" width="260">
-  <img src="images/medicine_timer_2.jpg" alt="Medicine Timer completed screen" width="260">
-  <img src="images/medicine_timer_3.jpg" alt="Medicine Timer calendar screen" width="260">
-</p>
+### Medicines
+
+Example: daily medicines with individual reminder times, taken counts, expiry dates, and edit/delete actions.
+
+<img src="images/medicine_timer_1.jpg" alt="Medicine Timer medicines screen" width="300">
+
+### Completed
+
+Example: completed doses grouped by medicine, including the taken time and undo action.
+
+<img src="images/medicine_timer_2.jpg" alt="Medicine Timer completed screen" width="300">
+
+### Calendar
+
+Example: a selected calendar date showing the completed dose history for that day.
+
+<img src="images/medicine_timer_3.jpg" alt="Medicine Timer calendar screen" width="300">
 
 ## Features
 
