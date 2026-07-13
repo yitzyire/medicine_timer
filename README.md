@@ -81,6 +81,10 @@ This repository is prepared for public GitHub use. Do not commit:
 - generated APK/AAB outputs
 - private exported medicine, reminder, expiry, or adherence data
 
+## License
+
+Medicine Timer is open source under the [MIT License](LICENSE).
+
 ## Roadmap
 
-The current APK uses in-memory sample data. Production persistence, real notification scheduling, permission handling, and test coverage are planned as the next engineering layer.
+Local persistence is in place. Real notification scheduling, permission handling, and test coverage are planned as the next engineering layer.
