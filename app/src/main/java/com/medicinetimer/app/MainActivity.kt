@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -186,7 +187,8 @@ private fun MedicineTimerApp() {
     Surface(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding(),
+            .statusBarsPadding()
+            .navigationBarsPadding(),
         color = Color(0xFFF7FAF8),
     ) {
         Column(
@@ -361,7 +363,10 @@ private fun MedicineTimerApp() {
 @Composable
 private fun AppLoadingScreen() {
     Surface(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding(),
         color = Color(0xFFF7FAF8),
     ) {
         Box(
