@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -167,6 +169,7 @@ private fun MedicineTimerApp() {
     var medicineAddingReminderId by remember { mutableStateOf<Int?>(null) }
     var showAddMedicineDialog by remember { mutableStateOf(false) }
     var medicinePendingDelete by remember { mutableStateOf<MedicineUi?>(null) }
+    var tabSwipeOffset by remember { mutableStateOf(0f) }
 
     val selectedMedicine = medicines.firstOrNull { it.id == selectedMedicineId }
 
@@ -207,71 +210,98 @@ private fun MedicineTimerApp() {
                 },
             )
             Spacer(modifier = Modifier.height(20.dp))
-            when {
-                selectedMedicine != null -> MedicineDetailPage(
-                    medicine = selectedMedicine,
-                    onEditMedicine = { medicineBeingEdited = selectedMedicine },
-                    onDeleteMedicine = { medicinePendingDelete = selectedMedicine },
-                    onAddReminder = { medicineAddingReminderId = selectedMedicine.id },
-                    onMarkTaken = { time ->
-                        val completedAt = LocalDateTime.now()
-                        medicines = medicines.map { medicine ->
-                            if (medicine.id == selectedMedicine.id) {
-                                medicine.copy(
-                                    reminders = medicine.reminders.map { reminder ->
-                                        if (reminder.time == time && reminder.takenAt == null) {
-                                            reminder.copy(takenAt = completedAt)
-                                        } else {
-                                            reminder
-                                        }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (selectedMedicine == null) {
+                            Modifier.pointerInput(page) {
+                                detectHorizontalDragGestures(
+                                    onDragStart = { tabSwipeOffset = 0f },
+                                    onHorizontalDrag = { _, dragAmount ->
+                                        tabSwipeOffset += dragAmount
                                     },
-                                )
-                            } else {
-                                medicine
-                            }
-                        }
-                    },
-                    onUndoTaken = { time ->
-                        medicines = medicines.undoTakenDose(selectedMedicine.id, time)
-                    },
-                )
-
-                page == 0 -> MedicinesPage(
-                    medicines = medicines,
-                    onMedicineClick = { selectedMedicineId = it.id },
-                    onAddMedicine = { showAddMedicineDialog = true },
-                    onEditMedicine = { medicineBeingEdited = it },
-                    onDeleteMedicine = { medicinePendingDelete = it },
-                    onMarkTaken = { medicineId, time ->
-                        val completedAt = LocalDateTime.now()
-                        medicines = medicines.map { medicine ->
-                            if (medicine.id == medicineId) {
-                                medicine.copy(
-                                    reminders = medicine.reminders.map { reminder ->
-                                        if (reminder.time == time && reminder.takenAt == null) {
-                                            reminder.copy(takenAt = completedAt)
-                                        } else {
-                                            reminder
+                                    onDragEnd = {
+                                        when {
+                                            tabSwipeOffset <= -80f -> page = (page + 1).coerceAtMost(2)
+                                            tabSwipeOffset >= 80f -> page = (page - 1).coerceAtLeast(0)
                                         }
+                                        tabSwipeOffset = 0f
                                     },
+                                    onDragCancel = { tabSwipeOffset = 0f },
                                 )
-                            } else {
-                                medicine
                             }
-                        }
-                    },
-                )
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
+                when {
+                    selectedMedicine != null -> MedicineDetailPage(
+                        medicine = selectedMedicine,
+                        onEditMedicine = { medicineBeingEdited = selectedMedicine },
+                        onDeleteMedicine = { medicinePendingDelete = selectedMedicine },
+                        onAddReminder = { medicineAddingReminderId = selectedMedicine.id },
+                        onMarkTaken = { time ->
+                            val completedAt = LocalDateTime.now()
+                            medicines = medicines.map { medicine ->
+                                if (medicine.id == selectedMedicine.id) {
+                                    medicine.copy(
+                                        reminders = medicine.reminders.map { reminder ->
+                                            if (reminder.time == time && reminder.takenAt == null) {
+                                                reminder.copy(takenAt = completedAt)
+                                            } else {
+                                                reminder
+                                            }
+                                        },
+                                    )
+                                } else {
+                                    medicine
+                                }
+                            }
+                        },
+                        onUndoTaken = { time ->
+                            medicines = medicines.undoTakenDose(selectedMedicine.id, time)
+                        },
+                    )
 
-                page == 1 -> CompletedPage(
-                    medicines = medicines,
-                    onUndoTaken = { medicineId, time ->
-                        medicines = medicines.undoTakenDose(medicineId, time)
-                    },
-                )
+                    page == 0 -> MedicinesPage(
+                        medicines = medicines,
+                        onMedicineClick = { selectedMedicineId = it.id },
+                        onAddMedicine = { showAddMedicineDialog = true },
+                        onEditMedicine = { medicineBeingEdited = it },
+                        onDeleteMedicine = { medicinePendingDelete = it },
+                        onMarkTaken = { medicineId, time ->
+                            val completedAt = LocalDateTime.now()
+                            medicines = medicines.map { medicine ->
+                                if (medicine.id == medicineId) {
+                                    medicine.copy(
+                                        reminders = medicine.reminders.map { reminder ->
+                                            if (reminder.time == time && reminder.takenAt == null) {
+                                                reminder.copy(takenAt = completedAt)
+                                            } else {
+                                                reminder
+                                            }
+                                        },
+                                    )
+                                } else {
+                                    medicine
+                                }
+                            }
+                        },
+                    )
 
-                else -> CalendarPage(
-                    medicines = medicines,
-                )
+                    page == 1 -> CompletedPage(
+                        medicines = medicines,
+                        onUndoTaken = { medicineId, time ->
+                            medicines = medicines.undoTakenDose(medicineId, time)
+                        },
+                    )
+
+                    else -> CalendarPage(
+                        medicines = medicines,
+                    )
+                }
             }
         }
     }
@@ -1388,50 +1418,54 @@ private fun CalendarPage(
             .map { reminder -> CompletedReminder(medicine, reminder) }
     }.sortedBy { it.reminder.takenAt }
 
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text(
-            text = "Calendar",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = Color(0xFF23443D),
-        )
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item {
+            Text(
+                text = "Calendar",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF23443D),
+            )
+        }
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text("July 2026", fontWeight = FontWeight.SemiBold)
-                    Text("Select dates", color = Color(0xFF687A75))
-                }
-                CalendarGrid(
-                    selectedDay = selectedDay,
-                    medicines = medicines,
-                    onDaySelected = { selectedDay = it },
-                )
-                Text(
-                    text = "Selected: $selectedDay Jul 2026",
-                    color = Color(0xFF687A75),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                if (completedForSelectedDay.isNotEmpty()) {
-                    completedForSelectedDay.forEach { completed ->
-                        CalendarTakenRow(
-                            medicine = completed.medicine,
-                            reminder = completed.reminder,
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("July 2026", fontWeight = FontWeight.SemiBold)
+                        Text("Select dates", color = Color(0xFF687A75))
                     }
-                } else {
-                    Text("No medicines taken on this date.", color = Color(0xFF687A75))
+                    CalendarGrid(
+                        selectedDay = selectedDay,
+                        medicines = medicines,
+                        onDaySelected = { selectedDay = it },
+                    )
+                    Text(
+                        text = "Selected: $selectedDay Jul 2026",
+                        color = Color(0xFF687A75),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (completedForSelectedDay.isNotEmpty()) {
+                        completedForSelectedDay.forEach { completed ->
+                            CalendarTakenRow(
+                                medicine = completed.medicine,
+                                reminder = completed.reminder,
+                            )
+                        }
+                    } else {
+                        Text("No medicines taken on this date.", color = Color(0xFF687A75))
+                    }
                 }
             }
         }
