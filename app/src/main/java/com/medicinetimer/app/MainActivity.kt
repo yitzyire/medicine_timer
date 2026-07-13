@@ -68,6 +68,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneOffset
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 
 class MainActivity : ComponentActivity() {
@@ -99,6 +100,7 @@ private data class DoseReminder(
 private val completedTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm a")
 private val completedDateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM")
 private val expiryDateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM yyyy")
+private val calendarMonthFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("MMMM yyyy")
 private val reminderTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm a")
 
 private val medicineColors = listOf(
@@ -124,6 +126,12 @@ private val medicineSurfaceColors = listOf(
     Color(0xFFF5FAFF),
     Color(0xFFFFF8F8),
 )
+
+private enum class ExpiryOption {
+    SevenDays,
+    FourteenDays,
+    CustomDate,
+}
 
 private val starterMedicines = listOf(
     MedicineUi(
@@ -518,6 +526,15 @@ private fun MedicineUi.isCompletedForDay(): Boolean {
 }
 
 private fun LocalDate.toExpiryLabel(): String = "Expires ${format(expiryDateFormatter)}"
+
+private fun LocalDate.toExpiryOption(): ExpiryOption {
+    val today = LocalDate.now()
+    return when (this) {
+        today.plusDays(7) -> ExpiryOption.SevenDays
+        today.plusDays(14) -> ExpiryOption.FourteenDays
+        else -> ExpiryOption.CustomDate
+    }
+}
 
 private fun String.toExpiryDateOrNull(): LocalDate? {
     val dateText = removePrefix("Expires").trim()
@@ -1201,6 +1218,35 @@ private fun AddReminderDialog(
     )
 }
 
+@Composable
+private fun ExpiryOptionButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = if (selected) {
+        ButtonDefaults.buttonColors(
+            containerColor = Color(0xFF2F6B5F),
+            contentColor = Color.White,
+        )
+    } else {
+        ButtonDefaults.outlinedButtonColors(
+            containerColor = Color.White,
+            contentColor = Color(0xFF2F6B5F),
+        )
+    }
+
+    OutlinedButton(
+        modifier = modifier,
+        onClick = onClick,
+        shape = RoundedCornerShape(8.dp),
+        colors = colors,
+    ) {
+        Text(label)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MedicineEditorDialog(
@@ -1218,6 +1264,9 @@ private fun MedicineEditorDialog(
         mutableStateOf(initialExpiryDate ?: LocalDate.now().plusMonths(6))
     }
     var showExpiryPicker by remember { mutableStateOf(false) }
+    var expiryOption by remember(initialExpiryDate) {
+        mutableStateOf(expiryDate.toExpiryOption())
+    }
     val canSave = name.isNotBlank()
 
     AlertDialog(
@@ -1232,16 +1281,53 @@ private fun MedicineEditorDialog(
                     label = { Text("Medicine name") },
                     singleLine = true,
                 )
-                OutlinedButton(
-                    onClick = { showExpiryPicker = true },
+                Text(
+                    text = "Course length",
+                    color = Color(0xFF60716B),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Row(
                     modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
+                    ExpiryOptionButton(
+                        modifier = Modifier.weight(1f),
+                        label = "7 days",
+                        selected = expiryOption == ExpiryOption.SevenDays,
+                        onClick = {
+                            expiryOption = ExpiryOption.SevenDays
+                            expiryDate = LocalDate.now().plusDays(7)
+                        },
+                    )
+                    ExpiryOptionButton(
+                        modifier = Modifier.weight(1f),
+                        label = "14 days",
+                        selected = expiryOption == ExpiryOption.FourteenDays,
+                        onClick = {
+                            expiryOption = ExpiryOption.FourteenDays
+                            expiryDate = LocalDate.now().plusDays(14)
+                        },
+                    )
+                }
+                ExpiryOptionButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    label = "Set date",
+                    selected = expiryOption == ExpiryOption.CustomDate,
+                    onClick = {
+                        expiryOption = ExpiryOption.CustomDate
+                        showExpiryPicker = true
+                    },
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            text = "Expiry date",
+                            text = "Ends",
                             color = Color(0xFF60716B),
                             style = MaterialTheme.typography.labelMedium,
                         )
@@ -1283,6 +1369,7 @@ private fun MedicineEditorDialog(
                     onClick = {
                         datePickerState.selectedDateMillis?.let { selectedMillis ->
                             expiryDate = selectedMillis.toDatePickerLocalDate()
+                            expiryOption = expiryDate.toExpiryOption()
                         }
                         showExpiryPicker = false
                     },
@@ -1411,10 +1498,11 @@ private fun ReminderProgress(reminders: List<DoseReminder>, color: Color) {
 private fun CalendarPage(
     medicines: List<MedicineUi>,
 ) {
-    var selectedDay by remember { mutableIntStateOf(12) }
+    var visibleMonth by remember { mutableStateOf(YearMonth.now()) }
+    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     val completedForSelectedDay = medicines.flatMap { medicine ->
         medicine.reminders
-            .filter { reminder -> reminder.takenAt?.dayOfMonth == selectedDay }
+            .filter { reminder -> reminder.takenAt?.toLocalDate() == selectedDate }
             .map { reminder -> CompletedReminder(medicine, reminder) }
     }.sortedBy { it.reminder.takenAt }
 
@@ -1442,16 +1530,37 @@ private fun CalendarPage(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("July 2026", fontWeight = FontWeight.SemiBold)
-                        Text("Select dates", color = Color(0xFF687A75))
+                        TextButton(
+                            onClick = {
+                                val previousMonth = visibleMonth.minusMonths(1)
+                                visibleMonth = previousMonth
+                                selectedDate = selectedDate.coerceInto(previousMonth)
+                            },
+                        ) {
+                            Text("Previous")
+                        }
+                        Text(
+                            text = visibleMonth.format(calendarMonthFormatter),
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        TextButton(
+                            onClick = {
+                                val nextMonth = visibleMonth.plusMonths(1)
+                                visibleMonth = nextMonth
+                                selectedDate = selectedDate.coerceInto(nextMonth)
+                            },
+                        ) {
+                            Text("Next")
+                        }
                     }
                     CalendarGrid(
-                        selectedDay = selectedDay,
+                        visibleMonth = visibleMonth,
+                        selectedDate = selectedDate,
                         medicines = medicines,
-                        onDaySelected = { selectedDay = it },
+                        onDateSelected = { selectedDate = it },
                     )
                     Text(
-                        text = "Selected: $selectedDay Jul 2026",
+                        text = "Selected: ${selectedDate.format(expiryDateFormatter)}",
                         color = Color(0xFF687A75),
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.SemiBold,
@@ -1474,10 +1583,19 @@ private fun CalendarPage(
 
 @Composable
 private fun CalendarGrid(
-    selectedDay: Int,
+    visibleMonth: YearMonth,
+    selectedDate: LocalDate,
     medicines: List<MedicineUi>,
-    onDaySelected: (Int) -> Unit,
+    onDateSelected: (LocalDate) -> Unit,
 ) {
+    val firstDayOfMonth = visibleMonth.atDay(1)
+    val leadingBlankDays = firstDayOfMonth.dayOfWeek.value - 1
+    val daysInMonth = visibleMonth.lengthOfMonth()
+    val calendarCells = List(42) { cellIndex ->
+        val dayNumber = cellIndex - leadingBlankDays + 1
+        if (dayNumber in 1..daysInMonth) visibleMonth.atDay(dayNumber) else null
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             modifier = Modifier
@@ -1490,19 +1608,20 @@ private fun CalendarGrid(
                 Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
             }
         }
-        (0 until 5).forEach { week ->
+        calendarCells.chunked(7).forEach { weekDates ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                (1..7).forEach { dayOfWeek ->
-                    val day = week * 7 + dayOfWeek
+                weekDates.forEach { date ->
                     CalendarDayCell(
-                        day = day,
-                        selected = day == selectedDay,
-                        markerColors = markerColorsForDay(day, medicines),
-                        markerBackgroundColor = markerBackgroundForDay(day, medicines),
-                        onClick = { onDaySelected(day) },
+                        date = date,
+                        selected = date == selectedDate,
+                        markerColors = date?.let { markerColorsForDate(it, medicines) }.orEmpty(),
+                        markerBackgroundColor = date?.let { markerBackgroundForDate(it, medicines) },
+                        onClick = {
+                            date?.let(onDateSelected)
+                        },
                     )
                 }
             }
@@ -1512,7 +1631,7 @@ private fun CalendarGrid(
 
 @Composable
 private fun CalendarDayCell(
-    day: Int,
+    date: LocalDate?,
     selected: Boolean,
     markerColors: List<Color>,
     markerBackgroundColor: Color?,
@@ -1532,12 +1651,16 @@ private fun CalendarDayCell(
                 color = backgroundColor,
                 shape = RoundedCornerShape(8.dp),
             )
-            .clickable(onClick = onClick)
+            .clickable(enabled = date != null, onClick = onClick)
             .padding(top = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        Text(day.toString(), style = MaterialTheme.typography.bodyMedium)
+        Text(
+            text = date?.dayOfMonth?.toString().orEmpty(),
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (date == null) Color.Transparent else Color.Unspecified,
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             markerColors.take(4).forEach { color ->
                 Box(
@@ -1550,9 +1673,9 @@ private fun CalendarDayCell(
     }
 }
 
-private fun markerColorsForDay(day: Int, medicines: List<MedicineUi>): List<Color> {
+private fun markerColorsForDate(date: LocalDate, medicines: List<MedicineUi>): List<Color> {
     return medicines.mapNotNull { medicine ->
-        if (medicine.reminders.any { reminder -> reminder.takenAt?.dayOfMonth == day }) {
+        if (medicine.reminders.any { reminder -> reminder.takenAt?.toLocalDate() == date }) {
             medicine.color
         } else {
             null
@@ -1560,15 +1683,19 @@ private fun markerColorsForDay(day: Int, medicines: List<MedicineUi>): List<Colo
     }
 }
 
-private fun markerBackgroundForDay(day: Int, medicines: List<MedicineUi>): Color? {
+private fun markerBackgroundForDate(date: LocalDate, medicines: List<MedicineUi>): Color? {
     val matchingMedicines = medicines.filter { medicine ->
-        medicine.reminders.any { reminder -> reminder.takenAt?.dayOfMonth == day }
+        medicine.reminders.any { reminder -> reminder.takenAt?.toLocalDate() == date }
     }
     return when (matchingMedicines.size) {
         0 -> null
         1 -> matchingMedicines.first().backgroundColor
         else -> Color(0xFFF2F7F5)
     }
+}
+
+private fun LocalDate.coerceInto(month: YearMonth): LocalDate {
+    return month.atDay(dayOfMonth.coerceAtMost(month.lengthOfMonth()))
 }
 
 @Composable
