@@ -37,6 +37,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -341,7 +342,7 @@ private fun MedicineTimerApp() {
         MedicineEditorDialog(
             title = "Add medicine",
             initialName = "",
-            initialExpiryDate = LocalDate.now().plusMonths(6),
+            initialExpiryDate = LocalDate.now().plusDays(7),
             accentColor = medicineColors[(newId - 1) % medicineColors.size],
             containerColor = medicineBackgroundColors[(newId - 1) % medicineBackgroundColors.size],
             confirmLabel = "Add",
@@ -1261,7 +1262,7 @@ private fun MedicineEditorDialog(
 ) {
     var name by remember(initialName) { mutableStateOf(initialName) }
     var expiryDate by remember(initialExpiryDate) {
-        mutableStateOf(initialExpiryDate ?: LocalDate.now().plusMonths(6))
+        mutableStateOf(initialExpiryDate ?: LocalDate.now().plusDays(7))
     }
     var showExpiryPicker by remember { mutableStateOf(false) }
     var expiryOption by remember(initialExpiryDate) {
@@ -1316,6 +1317,9 @@ private fun MedicineEditorDialog(
                     selected = expiryOption == ExpiryOption.CustomDate,
                     onClick = {
                         expiryOption = ExpiryOption.CustomDate
+                        if (expiryDate.isBefore(LocalDate.now())) {
+                            expiryDate = LocalDate.now()
+                        }
                         showExpiryPicker = true
                     },
                 )
@@ -1358,8 +1362,14 @@ private fun MedicineEditorDialog(
     )
 
     if (showExpiryPicker) {
+        val today = LocalDate.now()
         val datePickerState = rememberDatePickerState(
-            initialSelectedDateMillis = expiryDate.toDatePickerMillis(),
+            initialSelectedDateMillis = expiryDate.coerceAtLeast(today).toDatePickerMillis(),
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                    return utcTimeMillis.toDatePickerLocalDate() >= today
+                }
+            },
         )
 
         DatePickerDialog(
