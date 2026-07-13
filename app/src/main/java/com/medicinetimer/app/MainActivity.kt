@@ -1,8 +1,10 @@
 package com.medicinetimer.app
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -36,8 +38,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimeInput
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,18 +49,21 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.foundation.Image
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import org.json.JSONArray
+import org.json.JSONObject
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
@@ -89,8 +96,7 @@ private data class DoseReminder(
 private val completedTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm a")
 private val completedDateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM")
 private val expiryDateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM yyyy")
-
-private val reminderPresets = listOf("8:00 AM", "12:00 PM", "4:00 PM", "8:00 PM")
+private val reminderTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm a")
 
 private val medicineColors = listOf(
     Color(0xFFF2B84B),
@@ -151,11 +157,13 @@ private val starterMedicines = listOf(
 
 @Composable
 private fun MedicineTimerApp() {
+    val context = LocalContext.current
     var showLoading by remember { mutableStateOf(true) }
     var page by remember { mutableIntStateOf(0) }
     var selectedMedicineId by remember { mutableStateOf<Int?>(null) }
-    var medicines by remember { mutableStateOf(starterMedicines) }
+    var medicines by remember { mutableStateOf(loadMedicines(context)) }
     var medicineBeingEdited by remember { mutableStateOf<MedicineUi?>(null) }
+    var medicineAddingReminderId by remember { mutableStateOf<Int?>(null) }
     var showAddMedicineDialog by remember { mutableStateOf(false) }
     var medicinePendingDelete by remember { mutableStateOf<MedicineUi?>(null) }
 
@@ -164,6 +172,10 @@ private fun MedicineTimerApp() {
     LaunchedEffect(Unit) {
         delay(650)
         showLoading = false
+    }
+
+    LaunchedEffect(medicines) {
+        saveMedicines(context, medicines)
     }
 
     if (showLoading) {
@@ -198,15 +210,7 @@ private fun MedicineTimerApp() {
                     medicine = selectedMedicine,
                     onEditMedicine = { medicineBeingEdited = selectedMedicine },
                     onDeleteMedicine = { medicinePendingDelete = selectedMedicine },
-                    onAddReminder = {
-                        medicines = medicines.map { medicine ->
-                            if (medicine.id == selectedMedicine.id) {
-                                medicine.copy(reminders = addNextReminder(medicine.reminders))
-                            } else {
-                                medicine
-                            }
-                        }
-                    },
+                    onAddReminder = { medicineAddingReminderId = selectedMedicine.id },
                     onMarkTaken = { time ->
                         val completedAt = LocalDateTime.now()
                         medicines = medicines.map { medicine ->
@@ -267,6 +271,28 @@ private fun MedicineTimerApp() {
                     medicines = medicines,
                 )
             }
+        }
+    }
+
+    medicineAddingReminderId?.let { medicineId ->
+        val medicine = medicines.firstOrNull { it.id == medicineId }
+        if (medicine == null) {
+            medicineAddingReminderId = null
+        } else {
+            AddReminderDialog(
+                medicine = medicine,
+                onDismiss = { medicineAddingReminderId = null },
+                onConfirm = { time ->
+                    medicines = medicines.map { medicine ->
+                        if (medicine.id == medicineId) {
+                            medicine.copy(reminders = medicine.reminders.addReminder(time))
+                        } else {
+                            medicine
+                        }
+                    }
+                    medicineAddingReminderId = null
+                },
+            )
         }
     }
 
@@ -351,10 +377,16 @@ private fun AppLoadingScreen() {
     }
 }
 
-private fun addNextReminder(reminders: List<DoseReminder>): List<DoseReminder> {
-    val existingTimes = reminders.map { it.time }.toSet()
-    val nextTime = reminderPresets.firstOrNull { it !in existingTimes } ?: return reminders
-    return (reminders + DoseReminder(nextTime)).sortedBy { reminderPresets.indexOf(it.time) }
+private fun List<DoseReminder>.addReminder(time: String): List<DoseReminder> {
+    if (any { it.time == time }) return this
+    return (this + DoseReminder(time)).sortedBy { it.time.toReminderSortMinutes() }
+}
+
+private fun String.toReminderSortMinutes(): Int {
+    return runCatching {
+        val time = LocalTime.parse(this, reminderTimeFormatter)
+        time.hour * 60 + time.minute
+    }.getOrDefault(Int.MAX_VALUE)
 }
 
 private fun List<MedicineUi>.undoTakenDose(medicineId: Int, time: String): List<MedicineUi> {
@@ -370,6 +402,81 @@ private fun List<MedicineUi>.undoTakenDose(medicineId: Int, time: String): List<
         }
     }
 }
+
+private const val medicinePrefsName = "medicine_timer"
+private const val medicinesJsonKey = "medicines_json"
+
+private fun loadMedicines(context: Context): List<MedicineUi> {
+    val prefs = context.getSharedPreferences(medicinePrefsName, Context.MODE_PRIVATE)
+    val json = prefs.getString(medicinesJsonKey, null) ?: return starterMedicines
+
+    return runCatching {
+        val medicinesJson = JSONArray(json)
+        List(medicinesJson.length()) { index ->
+            val medicineJson = medicinesJson.getJSONObject(index)
+            val colorIndex = medicineJson.optInt(
+                "colorIndex",
+                positiveMod(medicineJson.getInt("id") - 1, medicineColors.size),
+            ).let { positiveMod(it, medicineColors.size) }
+            val remindersJson = medicineJson.optJSONArray("reminders") ?: JSONArray()
+
+            MedicineUi(
+                id = medicineJson.getInt("id"),
+                name = medicineJson.getString("name"),
+                expiry = medicineJson.getString("expiry"),
+                color = medicineColors[colorIndex],
+                backgroundColor = medicineBackgroundColors[colorIndex],
+                surfaceColor = medicineSurfaceColors[colorIndex],
+                reminders = List(remindersJson.length()) { reminderIndex ->
+                    val reminderJson = remindersJson.getJSONObject(reminderIndex)
+                    DoseReminder(
+                        time = reminderJson.getString("time"),
+                        takenAt = reminderJson.optString("takenAt")
+                            .takeIf { it.isNotBlank() }
+                            ?.let(LocalDateTime::parse),
+                    )
+                },
+            )
+        }
+    }.getOrElse {
+        starterMedicines
+    }
+}
+
+private fun saveMedicines(context: Context, medicines: List<MedicineUi>) {
+    val medicinesJson = JSONArray()
+    medicines.forEach { medicine ->
+        val remindersJson = JSONArray()
+        medicine.reminders.forEach { reminder ->
+            remindersJson.put(
+                JSONObject()
+                    .put("time", reminder.time)
+                    .put("takenAt", reminder.takenAt?.toString().orEmpty()),
+            )
+        }
+
+        medicinesJson.put(
+            JSONObject()
+                .put("id", medicine.id)
+                .put("name", medicine.name)
+                .put("expiry", medicine.expiry)
+                .put("colorIndex", medicine.colorIndex())
+                .put("reminders", remindersJson),
+        )
+    }
+
+    context.getSharedPreferences(medicinePrefsName, Context.MODE_PRIVATE)
+        .edit()
+        .putString(medicinesJsonKey, medicinesJson.toString())
+        .apply()
+}
+
+private fun MedicineUi.colorIndex(): Int {
+    val colorIndex = medicineColors.indexOf(color)
+    return if (colorIndex >= 0) colorIndex else positiveMod(id - 1, medicineColors.size)
+}
+
+private fun positiveMod(value: Int, divisor: Int): Int = ((value % divisor) + divisor) % divisor
 
 private fun MedicineUi.isCompletedForDay(): Boolean {
     return reminders.isNotEmpty() && reminders.all { it.takenAt != null }
@@ -968,9 +1075,8 @@ private fun MedicineDetailPage(
                     )
                     Button(
                         onClick = onAddReminder,
-                        enabled = medicine.reminders.size < reminderPresets.size,
                     ) {
-                        Text(if (medicine.reminders.size < reminderPresets.size) "Add reminder" else "4 reminders set")
+                        Text("Add time")
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1003,6 +1109,61 @@ private fun MedicineDetailPage(
             )
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddReminderDialog(
+    medicine: MedicineUi,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    val defaultTime = remember {
+        LocalTime.now().plusHours(1).withMinute(0).withSecond(0).withNano(0)
+    }
+    val timePickerState = rememberTimePickerState(
+        initialHour = defaultTime.hour,
+        initialMinute = defaultTime.minute,
+        is24Hour = false,
+    )
+    val selectedTime = LocalTime.of(timePickerState.hour, timePickerState.minute)
+        .format(reminderTimeFormatter)
+    val alreadyExists = medicine.reminders.any { it.time == selectedTime }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = medicine.backgroundColor,
+        title = { Text("Add reminder") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                TimeInput(state = timePickerState)
+                Text(
+                    text = if (alreadyExists) "This time is already set." else "Selected: $selectedTime",
+                    color = if (alreadyExists) Color(0xFF9A3412) else Color(0xFF52645F),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(selectedTime) },
+                enabled = !alreadyExists,
+                colors = ButtonDefaults.buttonColors(containerColor = medicine.color),
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
