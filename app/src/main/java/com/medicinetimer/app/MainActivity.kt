@@ -96,6 +96,7 @@ private data class MedicineUi(
 private data class DoseReminder(
     val time: String,
     val takenAt: LocalDateTime? = null,
+    val completionHistory: List<LocalDateTime> = emptyList(),
 )
 
 private val completedTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm a")
@@ -252,22 +253,11 @@ private fun MedicineTimerApp() {
                         onDeleteMedicine = { medicinePendingDelete = selectedMedicine },
                         onAddReminder = { medicineAddingReminderId = selectedMedicine.id },
                         onMarkTaken = { time ->
-                            val completedAt = LocalDateTime.now()
-                            medicines = medicines.map { medicine ->
-                                if (medicine.id == selectedMedicine.id) {
-                                    medicine.copy(
-                                        reminders = medicine.reminders.map { reminder ->
-                                            if (reminder.time == time && reminder.takenAt == null) {
-                                                reminder.copy(takenAt = completedAt)
-                                            } else {
-                                                reminder
-                                            }
-                                        },
-                                    )
-                                } else {
-                                    medicine
-                                }
-                            }
+                            medicines = medicines.markTakenDose(
+                                medicineId = selectedMedicine.id,
+                                time = time,
+                                completedAt = LocalDateTime.now(),
+                            )
                         },
                         onUndoTaken = { time ->
                             medicines = medicines.undoTakenDose(selectedMedicine.id, time)
@@ -281,22 +271,11 @@ private fun MedicineTimerApp() {
                         onEditMedicine = { medicineBeingEdited = it },
                         onDeleteMedicine = { medicinePendingDelete = it },
                         onMarkTaken = { medicineId, time ->
-                            val completedAt = LocalDateTime.now()
-                            medicines = medicines.map { medicine ->
-                                if (medicine.id == medicineId) {
-                                    medicine.copy(
-                                        reminders = medicine.reminders.map { reminder ->
-                                            if (reminder.time == time && reminder.takenAt == null) {
-                                                reminder.copy(takenAt = completedAt)
-                                            } else {
-                                                reminder
-                                            }
-                                        },
-                                    )
-                                } else {
-                                    medicine
-                                }
-                            }
+                            medicines = medicines.markTakenDose(
+                                medicineId = medicineId,
+                                time = time,
+                                completedAt = LocalDateTime.now(),
+                            )
                         },
                     )
 
@@ -413,9 +392,9 @@ private fun AppLoadingScreen() {
             contentAlignment = Alignment.Center,
         ) {
             Image(
-                painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                painter = painterResource(id = R.drawable.icon_pill),
                 contentDescription = "Medicine Timer",
-                modifier = Modifier.size(98.dp),
+                modifier = Modifier.size(112.dp),
             )
         }
     }
@@ -433,12 +412,46 @@ private fun String.toReminderSortMinutes(): Int {
     }.getOrDefault(Int.MAX_VALUE)
 }
 
-private fun List<MedicineUi>.undoTakenDose(medicineId: Int, time: String): List<MedicineUi> {
+private fun List<MedicineUi>.markTakenDose(
+    medicineId: Int,
+    time: String,
+    completedAt: LocalDateTime,
+): List<MedicineUi> {
+    val completedDate = completedAt.toLocalDate()
     return map { medicine ->
         if (medicine.id == medicineId) {
             medicine.copy(
                 reminders = medicine.reminders.map { reminder ->
-                    if (reminder.time == time) reminder.copy(takenAt = null) else reminder
+                    if (reminder.time == time && reminder.completedAtOn(completedDate) == null) {
+                        val updatedHistory = (reminder.fullCompletionHistory() + completedAt).distinct()
+                        reminder.copy(takenAt = completedAt, completionHistory = updatedHistory)
+                    } else {
+                        reminder
+                    }
+                },
+            )
+        } else {
+            medicine
+        }
+    }
+}
+
+private fun List<MedicineUi>.undoTakenDose(medicineId: Int, time: String): List<MedicineUi> {
+    val today = LocalDate.now()
+    return map { medicine ->
+        if (medicine.id == medicineId) {
+            medicine.copy(
+                reminders = medicine.reminders.map { reminder ->
+                    if (reminder.time == time) {
+                        val updatedHistory = reminder.fullCompletionHistory()
+                            .filterNot { it.toLocalDate() == today }
+                        reminder.copy(
+                            takenAt = updatedHistory.maxOrNull(),
+                            completionHistory = updatedHistory,
+                        )
+                    } else {
+                        reminder
+                    }
                 },
             )
         } else {
@@ -478,7 +491,10 @@ private fun loadMedicines(context: Context): List<MedicineUi> {
                         takenAt = reminderJson.optString("takenAt")
                             .takeIf { it.isNotBlank() }
                             ?.let(LocalDateTime::parse),
-                    )
+                        completionHistory = reminderJson.optJSONArray("completionHistory")
+                            ?.toLocalDateTimeList()
+                            .orEmpty(),
+                    ).withMigratedHistory()
                 },
             )
         }
@@ -495,7 +511,15 @@ private fun saveMedicines(context: Context, medicines: List<MedicineUi>) {
             remindersJson.put(
                 JSONObject()
                     .put("time", reminder.time)
-                    .put("takenAt", reminder.takenAt?.toString().orEmpty()),
+                    .put("takenAt", reminder.takenAt?.toString().orEmpty())
+                    .put(
+                        "completionHistory",
+                        JSONArray().also { historyJson ->
+                            reminder.fullCompletionHistory()
+                                .sorted()
+                                .forEach { historyJson.put(it.toString()) }
+                        },
+                    ),
             )
         }
 
@@ -523,7 +547,27 @@ private fun MedicineUi.colorIndex(): Int {
 private fun positiveMod(value: Int, divisor: Int): Int = ((value % divisor) + divisor) % divisor
 
 private fun MedicineUi.isCompletedForDay(): Boolean {
-    return reminders.isNotEmpty() && reminders.all { it.takenAt != null }
+    return reminders.isNotEmpty() && reminders.all { it.completedAtOn() != null }
+}
+
+private fun DoseReminder.completedAtOn(date: LocalDate = LocalDate.now()): LocalDateTime? {
+    return fullCompletionHistory()
+        .filter { it.toLocalDate() == date }
+        .maxOrNull()
+}
+
+private fun DoseReminder.fullCompletionHistory(): List<LocalDateTime> {
+    return (completionHistory + listOfNotNull(takenAt)).distinct()
+}
+
+private fun DoseReminder.withMigratedHistory(): DoseReminder {
+    return copy(completionHistory = fullCompletionHistory())
+}
+
+private fun JSONArray.toLocalDateTimeList(): List<LocalDateTime> {
+    return List(length()) { index ->
+        runCatching { LocalDateTime.parse(getString(index)) }.getOrNull()
+    }.filterNotNull()
 }
 
 private fun LocalDate.toExpiryLabel(): String = "Expires ${format(expiryDateFormatter)}"
@@ -725,7 +769,7 @@ private fun MedicineCard(
     onDelete: () -> Unit,
     onMarkTaken: (String) -> Unit,
 ) {
-    val takenCount = medicine.reminders.count { it.takenAt != null }
+    val takenCount = medicine.reminders.count { it.completedAtOn() != null }
     val completedForDay = medicine.isCompletedForDay()
 
     Card(
@@ -831,7 +875,7 @@ private fun MedicineReminderTasks(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         reminders.forEach { reminder ->
-            val completedAt = reminder.takenAt
+            val completedAt = reminder.completedAtOn()
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -901,8 +945,11 @@ private fun CompletedPage(
 ) {
     val completedReminders = medicines.flatMap { medicine ->
         medicine.reminders
-            .filter { it.takenAt != null }
-            .map { reminder -> CompletedReminder(medicine, reminder) }
+            .mapNotNull { reminder ->
+                reminder.completedAtOn()?.let { completedAt ->
+                    CompletedReminder(medicine, reminder.copy(takenAt = completedAt))
+                }
+            }
     }.sortedByDescending { it.reminder.takenAt }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1432,7 +1479,7 @@ private fun ReminderRow(
     onMarkTaken: () -> Unit,
     onUndoTaken: () -> Unit,
 ) {
-    val completedAt = reminder.takenAt
+    val completedAt = reminder.completedAtOn()
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1487,7 +1534,7 @@ private fun ReminderProgress(reminders: List<DoseReminder>, color: Color) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val completedAt = reminder.takenAt
+                val completedAt = reminder.completedAtOn()
                 Text(text = reminder.time)
                     if (completedAt != null) {
                         CompletedLabel(completedAt = completedAt)
@@ -1512,8 +1559,13 @@ private fun CalendarPage(
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     val completedForSelectedDay = medicines.flatMap { medicine ->
         medicine.reminders
-            .filter { reminder -> reminder.takenAt?.toLocalDate() == selectedDate }
-            .map { reminder -> CompletedReminder(medicine, reminder) }
+            .flatMap { reminder ->
+                reminder.fullCompletionHistory()
+                    .filter { completedAt -> completedAt.toLocalDate() == selectedDate }
+                    .map { completedAt ->
+                        CompletedReminder(medicine, reminder.copy(takenAt = completedAt))
+                    }
+            }
     }.sortedBy { it.reminder.takenAt }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -1685,7 +1737,7 @@ private fun CalendarDayCell(
 
 private fun markerColorsForDate(date: LocalDate, medicines: List<MedicineUi>): List<Color> {
     return medicines.mapNotNull { medicine ->
-        if (medicine.reminders.any { reminder -> reminder.takenAt?.toLocalDate() == date }) {
+        if (medicine.reminders.any { reminder -> reminder.completedAtOn(date) != null }) {
             medicine.color
         } else {
             null
@@ -1695,7 +1747,7 @@ private fun markerColorsForDate(date: LocalDate, medicines: List<MedicineUi>): L
 
 private fun markerBackgroundForDate(date: LocalDate, medicines: List<MedicineUi>): Color? {
     val matchingMedicines = medicines.filter { medicine ->
-        medicine.reminders.any { reminder -> reminder.takenAt?.toLocalDate() == date }
+        medicine.reminders.any { reminder -> reminder.completedAtOn(date) != null }
     }
     return when (matchingMedicines.size) {
         0 -> null
